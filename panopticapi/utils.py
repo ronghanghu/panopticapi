@@ -97,3 +97,34 @@ def id2rgb(id_map):
 def save_json(d, file):
     with open(file, 'w') as f:
         json.dump(d, f)
+
+
+def merge_thing_instances(pan_ids, segments_info, is_gt):
+    """
+    When there are multiple instances in the same category,
+    merge these same-class instances into one single instance per class
+    The merged id will be same as the first (unmerged) id in this class
+    """
+    from collections import defaultdict
+
+    cat_id2ins_ids = defaultdict(list)
+    for ins in segments_info:
+        cat_id, ins_id = ins['category_id'], ins['id']
+        cat_id2ins_ids[cat_id].append(ins_id)
+
+    new_pan_ids = pan_ids.copy()
+    for ins in segments_info:
+        cat_id, ins_id = ins['category_id'], ins['id']
+        new_ins_id = cat_id2ins_ids[cat_id][0]
+        new_pan_ids[new_pan_ids == ins_id] = new_ins_id
+
+    new_segments_info = []
+    for cat_id in sorted(cat_id2ins_ids):
+        new_ins_id = cat_id2ins_ids[cat_id][0]
+        info = {'id': new_ins_id, 'category_id': cat_id}
+        if is_gt:
+            info['iscrowd'] = 0
+            info['area'] = np.sum(new_pan_ids == new_ins_id)
+        new_segments_info.append(info)
+
+    return new_pan_ids, new_segments_info

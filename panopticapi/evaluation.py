@@ -14,7 +14,7 @@ import multiprocessing
 
 import PIL.Image as Image
 
-from panopticapi.utils import get_traceback, rgb2id
+from panopticapi.utils import get_traceback, rgb2id, merge_thing_instances
 
 OFFSET = 256 * 256 * 256
 VOID = 0
@@ -74,7 +74,7 @@ class PQStat():
 
 
 @get_traceback
-def pq_compute_single_core(proc_id, annotation_set, gt_folder, pred_folder, categories):
+def pq_compute_single_core(proc_id, annotation_set, gt_folder, pred_folder, categories, merge_things):
     pq_stat = PQStat()
 
     idx = 0
@@ -88,11 +88,18 @@ def pq_compute_single_core(proc_id, annotation_set, gt_folder, pred_folder, cate
         pan_pred = np.array(Image.open(os.path.join(pred_folder, pred_ann['file_name'])), dtype=np.uint32)
         pan_pred = rgb2id(pan_pred)
 
-        gt_segms = {el['id']: el for el in gt_ann['segments_info']}
-        pred_segms = {el['id']: el for el in pred_ann['segments_info']}
+        gt_segms_info = gt_ann['segments_info']
+        pred_segms_info = pred_ann['segments_info']
+
+        if merge_things:
+            pan_gt, gt_segms_info = merge_thing_instances(pan_gt, gt_segms_info, is_gt=True)
+            pan_pred, pred_segms_info = merge_thing_instances(pan_pred, pred_segms_info, is_gt=False)
+
+        gt_segms = {el['id']: el for el in gt_segms_info}
+        pred_segms = {el['id']: el for el in pred_segms_info}
 
         # predicted segments area calculation + prediction sanity checks
-        pred_labels_set = set(el['id'] for el in pred_ann['segments_info'])
+        pred_labels_set = set(el['id'] for el in pred_segms_info)
         labels, labels_cnt = np.unique(pan_pred, return_counts=True)
         for label, label_cnt in zip(labels, labels_cnt):
             if label not in pred_segms:
@@ -165,7 +172,7 @@ def pq_compute_single_core(proc_id, annotation_set, gt_folder, pred_folder, cate
     return pq_stat
 
 
-def pq_compute_multi_core(matched_annotations_list, gt_folder, pred_folder, categories):
+def pq_compute_multi_core(matched_annotations_list, gt_folder, pred_folder, categories, merge_things):
     cpu_num = multiprocessing.cpu_count()
     annotations_split = np.array_split(matched_annotations_list, cpu_num)
     print("Number of cores: {}, images per core: {}".format(cpu_num, len(annotations_split[0])))
@@ -173,7 +180,7 @@ def pq_compute_multi_core(matched_annotations_list, gt_folder, pred_folder, cate
     processes = []
     for proc_id, annotation_set in enumerate(annotations_split):
         p = workers.apply_async(pq_compute_single_core,
-                                (proc_id, annotation_set, gt_folder, pred_folder, categories))
+                                (proc_id, annotation_set, gt_folder, pred_folder, categories, merge_things))
         processes.append(p)
     pq_stat = PQStat()
     for p in processes:
@@ -181,7 +188,7 @@ def pq_compute_multi_core(matched_annotations_list, gt_folder, pred_folder, cate
     return pq_stat
 
 
-def pq_compute(gt_json_file, pred_json_file, gt_folder=None, pred_folder=None):
+def pq_compute(gt_json_file, pred_json_file, gt_folder=None, pred_folder=None, merge_things=False):
 
     start_time = time.time()
     with open(gt_json_file, 'r') as f:
@@ -216,7 +223,9 @@ def pq_compute(gt_json_file, pred_json_file, gt_folder=None, pred_folder=None):
             raise Exception('no prediction for the image with id: {}'.format(image_id))
         matched_annotations_list.append((gt_ann, pred_annotations[image_id]))
 
-    pq_stat = pq_compute_multi_core(matched_annotations_list, gt_folder, pred_folder, categories)
+    pq_stat = pq_compute_multi_core(
+        matched_annotations_list, gt_folder, pred_folder, categories, merge_things
+    )
 
     metrics = [("All", None), ("Things", True), ("Stuff", False)]
     results = {}
@@ -240,6 +249,12 @@ def pq_compute(gt_json_file, pred_json_file, gt_folder=None, pred_folder=None):
     print("Time elapsed: {:0.2f} seconds".format(t_delta))
 
     return results
+
+
+def pq_compute_sem_seg(gt_json_file, pred_json_file, gt_folder=None, pred_folder=None):
+    return pq_compute(
+        gt_json_file, pred_json_file, gt_folder, pred_folder, merge_things=True
+    )
 
 
 if __name__ == "__main__":
