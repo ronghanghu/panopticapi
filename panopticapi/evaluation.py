@@ -77,12 +77,7 @@ class PQStat():
 def pq_compute_single_core(proc_id, annotation_set, gt_folder, pred_folder, categories, merge_things):
     pq_stat = PQStat()
 
-    idx = 0
     for gt_ann, pred_ann in annotation_set:
-        if idx % 100 == 0:
-            print('Core: {}, {} from {} images processed'.format(proc_id, idx, len(annotation_set)))
-        idx += 1
-
         pan_gt = np.array(Image.open(os.path.join(gt_folder, gt_ann['file_name'])), dtype=np.uint32)
         pan_gt = rgb2id(pan_gt)
         pan_pred = np.array(Image.open(os.path.join(pred_folder, pred_ann['file_name'])), dtype=np.uint32)
@@ -168,14 +163,12 @@ def pq_compute_single_core(proc_id, annotation_set, gt_folder, pred_folder, cate
             if intersection / pred_info['area'] > 0.5:
                 continue
             pq_stat[pred_info['category_id']].fp += 1
-    print('Core: {}, all {} images processed'.format(proc_id, len(annotation_set)))
     return pq_stat
 
 
 def pq_compute_multi_core(matched_annotations_list, gt_folder, pred_folder, categories, merge_things):
     cpu_num = multiprocessing.cpu_count()
     annotations_split = np.array_split(matched_annotations_list, cpu_num)
-    print("Number of cores: {}, images per core: {}".format(cpu_num, len(annotations_split[0])))
     workers = multiprocessing.Pool(processes=cpu_num)
     processes = []
     for proc_id, annotation_set in enumerate(annotations_split):
