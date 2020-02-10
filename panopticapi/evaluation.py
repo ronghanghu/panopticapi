@@ -72,6 +72,19 @@ class PQStat():
 
         return {'pq': pq / n, 'sq': sq / n, 'rq': rq / n, 'n': n}, per_class_results
 
+    def print_per_cls_stats(self, categories):
+        categories = sorted(categories.items(), key=lambda x: x[1]['id'])
+        fmt_str = "{},{},{},{},{},"
+        print("fmt_str".format('category,', 'IoU', 'TP', 'FP', 'FN'))
+        print('-' * 100)
+        for label, label_info in categories:
+            iou = self.pq_per_cat[label].iou
+            tp = self.pq_per_cat[label].tp
+            fp = self.pq_per_cat[label].fp
+            fn = self.pq_per_cat[label].fn
+            print(fmt_str.format(label_info['name'], iou, tp, fp, fn))
+        print('-' * 100)
+
 
 @get_traceback
 def pq_compute_single_core(proc_id, annotation_set, gt_folder, pred_folder, categories, merge_things):
@@ -226,6 +239,9 @@ def pq_compute(gt_json_file, pred_json_file, gt_folder=None, pred_folder=None, m
         results[name], per_class_results = pq_stat.pq_average(categories, isthing=isthing)
         if name == 'All':
             results['per_class'] = per_class_results
+    # print per-class metrics when treating things as stuff
+    if merge_things:
+        pq_stat.print_per_cls_stats(categories)
     print("{:10s}| {:>5s}  {:>5s}  {:>5s} {:>5s}".format("", "PQ", "SQ", "RQ", "N"))
     print("-" * (10 + 7 * 4))
 
